@@ -23,20 +23,32 @@
 #define __attribute__(A)
 #endif
 
-static char* suffix_unicode_normalize="OFF";
-static char* suffix_unicode_version="DEFAULT";
-static char icu_unicode_version[32];
+static char* suffix_unicode_normalize;
+static char* suffix_unicode_version;
+static char suffix_info[128];
+static uint suffix_limit_length=0;
 
-static void* icu_malloc(const void* context, size_t size){ return my_malloc(size,MYF(MY_WME)); }
-static void* icu_realloc(const void* context, void* ptr, size_t size){ return my_realloc(ptr,size,MYF(MY_WME)); }
 static void  icu_free(const void* context, void *ptr){ my_free(ptr,MYF(0)); }
+static void* icu_malloc(const void* context, size_t size){ return my_malloc(size,MYF(MY_WME)); }
+static void* icu_realloc(const void* context, void* ptr, size_t size){
+  if(ptr!=NULL) return my_realloc(ptr,size,MYF(MY_WME));
+  else return my_malloc(size,MYF(MY_WME));
+}
 
 static int suffix_parser_plugin_init(void *arg __attribute__((unused))){
 #if HAVE_ICU
+  char icu_tmp_str[16];
   char errstr[128];
   UVersionInfo versionInfo;
-  u_getUnicodeVersion(versionInfo);
-  u_versionToString(versionInfo, icu_unicode_version);
+  u_getVersion(versionInfo); // get ICU version
+  u_versionToString(versionInfo, icu_tmp_str);
+  strcat(suffix_info, "with ICU ");
+  strcat(suffix_info, icu_tmp_str);
+  u_getUnicodeVersion(versionInfo); // get ICU Unicode version
+  u_versionToString(versionInfo, icu_tmp_str);
+  strcat(suffix_info, "(Unicode ");
+  strcat(suffix_info, icu_tmp_str);
+  strcat(suffix_info, ")");
   
   UErrorCode ustatus=0;
   u_setMemoryFunctions(NULL, icu_malloc, icu_realloc, icu_free, &ustatus);
@@ -45,6 +57,8 @@ static int suffix_parser_plugin_init(void *arg __attribute__((unused))){
     fputs(errstr, stderr);
     fflush(stderr);
   }
+#else
+  strcat(suffix_info, "without ICU");
 #endif
   return(0);
 }
@@ -91,48 +105,58 @@ static size_t str_convert(CHARSET_INFO *cs, char *from, size_t from_length,
   return (size_t)(wpos - to);
 }
 
-static void suffix_add_word(MYSQL_FTPARSER_PARAM *param, char* buff, size_t length, MYSQL_FTPARSER_BOOLEAN_INFO* instinfo, int skip){
+static void suffix_add_word(MYSQL_FTPARSER_PARAM *param, char* buff, size_t length, MYSQL_FTPARSER_BOOLEAN_INFO* instinfo, int query){
   char* pos=buff;
   char* docend=buff+length;
+  
+  int phrase = 0;
+  if(length > HA_FT_MAXBYTELEN){
+    phrase = 1;
+  }
+  uint limit_length = suffix_limit_length;
+  if(limit_length == 0){ limit_length = HA_FT_MAXBYTELEN; }
+  size_t numchars = param->cs->cset->numchars(param->cs, buff, buff+length);
+  if(numchars > limit_length){
+    phrase = 1;
+  }
+  // TODO: We'd better check that limit_length*maxlen<HA_FT_MAXBYTELEN,
+  // TODO: or raise warn that the token was truncated.
+  
+  if(phrase > 0 && param->mode == MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
+    instinfo->trunc = 0;
+    instinfo->quot=(char*)1;
+    instinfo->type = FT_TOKEN_LEFT_PAREN;
+    param->mysql_add_word(param, pos, 0, instinfo); // quote left
+    instinfo->type = FT_TOKEN_WORD;
+  }
+  
+  size_t pos_ct = 0;
+  size_t c_ct = 0;
+  char* c = pos; // XXX: might be out of the loop for efficient calc
   while(pos < docend){
     // we must not exceed HA_FT_MAXBYTELEN-HA_FT_WLEN
-    if(docend-pos > HA_FT_MAXBYTELEN){
-      char* c = pos;
-      while(c < pos+HA_FT_MAXBYTELEN){
+    if((docend-pos > HA_FT_MAXBYTELEN) || (numchars-pos_ct > limit_length)){
+      while((c < pos+HA_FT_MAXBYTELEN) && (c_ct < pos_ct+limit_length)){
         int len = param->cs->cset->mbcharlen(param->cs, (uint)(*c));
         if(c+len > pos+HA_FT_MAXBYTELEN) break;
         
-        if(len > 0){
-          c += len;
-        }else{ // illegal sequence.
-          c++;
-        }
+        if(len > 0){ c += len; }
+        else{ c++; } // illegal sequence.
+        c_ct++;
       }
       
       param->mysql_add_word(param, pos, c-pos, instinfo);
-char bus[1024];
-memcpy(bus,pos,c-pos);
-bus[c-pos]='\0';
-fputs(bus,stderr);
-fflush(stderr);
-      if(skip){
-        pos = c;
-      }else{
-        int len = param->cs->cset->mbcharlen(param->cs, (uint)*pos);
-        if(len > 0){
-          pos += len;
-        }else{
-          pos++;
-        }
-      }
+      
+      int len = param->cs->cset->mbcharlen(param->cs, (uint)*pos);
+      if(len > 0){ pos += len; }
+      else{ pos++; }
+      pos_ct++;
     }else{
       param->mysql_add_word(param, pos, docend-pos, instinfo);
-char bus[1024];
-memcpy(bus,pos,docend-pos);
-bus[docend-pos]='\0';
-fputs(bus,stderr);
-fflush(stderr);
-      if(skip) break;
+      if(query){
+        // we don't need to check further in querying.
+        break;
+      }
       
       int len = param->cs->cset->mbcharlen(param->cs, (uint)*pos);
       if(len > 0){
@@ -140,7 +164,15 @@ fflush(stderr);
       }else{
         pos++;
       }
+      pos_ct++;
     }
+  }
+  
+  if(phrase>0 && param->mode == MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
+    instinfo->type = FT_TOKEN_RIGHT_PAREN;
+    param->mysql_add_word(param, pos, 0, instinfo); // quote right
+    instinfo->quot= NULL;
+    instinfo->type = FT_TOKEN_WORD;
   }
 }
 
@@ -377,6 +409,11 @@ int suffix_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, 
     return -1;
 }
 
+static MYSQL_SYSVAR_UINT(limit_length, suffix_limit_length,
+  PLUGIN_VAR_UNSIGNED,
+  "Set the limit length of suffix (unlimit=0)",
+  NULL, NULL, 0, 0, 255);
+
 static MYSQL_SYSVAR_STR(normalization, suffix_unicode_normalize,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
   "Set unicode normalization (OFF, C, D, KC, KD, FCD)",
@@ -389,12 +426,13 @@ static MYSQL_SYSVAR_STR(unicode_version, suffix_unicode_version,
 
 static struct st_mysql_show_var suffix_status[]=
 {
-  {"ICU_unicode_version", (char *)icu_unicode_version, SHOW_CHAR},
+  {"suffix_info", (char *)suffix_info, SHOW_CHAR},
   {0,0,0}
 };
 
 static struct st_mysql_sys_var* suffix_system_variables[]= {
 #if HAVE_ICU
+  MYSQL_SYSVAR(limit_length),
   MYSQL_SYSVAR(normalization),
   MYSQL_SYSVAR(unicode_version),
 #endif
