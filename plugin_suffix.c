@@ -426,7 +426,7 @@ static MYSQL_SYSVAR_STR(unicode_version, suffix_unicode_version,
 
 static struct st_mysql_show_var suffix_status[]=
 {
-  {"suffix_info", (char *)suffix_info, SHOW_CHAR},
+  {"Suffix_info", (char *)suffix_info, SHOW_CHAR},
   {0,0,0}
 };
 
