@@ -187,7 +187,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
   int feed_req_free = 0;
   
   // we do convert if it was requred to normalize.
-  if(strcmp(cs->csname, "utf8")!=0 && strcmp(suffix_unicode_normalize, "OFF")!=0){
+  if(strcmp(cs->csname, "utf8")!=0 && suffix_unicode_normalize && strcmp(suffix_unicode_normalize, "OFF")!=0){
     uc = get_charset(33,MYF(0)); // my_charset_utf8_general_ci for utf8 conversion
   }
   
@@ -205,7 +205,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
   
 #if HAVE_ICU
   // normalize
-  if(strcmp(suffix_unicode_normalize, "OFF")!=0){
+  if(suffix_unicode_normalize && strcmp(suffix_unicode_normalize, "OFF")!=0){
     char* nm;
     char* t;
     size_t nm_length=0;
@@ -220,7 +220,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
     if(strcmp(suffix_unicode_normalize, "KC")==0) mode = UNORM_NFKC;
     if(strcmp(suffix_unicode_normalize, "KD")==0) mode = UNORM_NFKD;
     if(strcmp(suffix_unicode_normalize, "FCD")==0) mode = UNORM_FCD;
-    if(strcmp(suffix_unicode_version, "3.2")==0) options |= UNORM_UNICODE_3_2;
+    if(suffix_unicode_version && strcmp(suffix_unicode_version, "3.2")==0) options |= UNORM_UNICODE_3_2;
     t = uni_normalize(feed, feed_length, nm, nm_length, &nm_used, mode, options, &status);
     if(status != 0){
       nm_length=nm_used;
@@ -457,7 +457,7 @@ mysql_declare_plugin(ft_suffix)
   PLUGIN_LICENSE_BSD,
   suffix_parser_plugin_init,  /* init function (when loaded)     */
   suffix_parser_plugin_deinit,/* deinit function (when unloaded) */
-  0x0014,                     /* version                         */
+  0x0015,                     /* version                         */
   suffix_status,               /* status variables                */
   suffix_system_variables,     /* system variables                */
   NULL
