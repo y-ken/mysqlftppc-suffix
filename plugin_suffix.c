@@ -33,7 +33,7 @@ static char* suffix_unicode_version;
 static char suffix_info[128];
 static unsigned int suffix_limit_length=0;
 
-static void  icu_free(const void* context, void *ptr){ my_free(ptr,MYF(0)); }
+static void  icu_free(const void* context, void *ptr){ my_free(ptr); }
 static void* icu_malloc(const void* context, size_t size){ return my_malloc(size,MYF(MY_WME)); }
 static void* icu_realloc(const void* context, void* ptr, size_t size){
   if(ptr!=NULL) return my_realloc(ptr,size,MYF(MY_WME));
@@ -184,7 +184,7 @@ static size_t str_convert(CHARSET_INFO *cs, char *from, size_t from_length,
     }
     if(numchars){ *numchars++; }
   }
-  if(tmp){ my_free(tmp, MYF(0)); }
+  if(tmp){ my_free(tmp); }
   return (size_t)(wpos-to);
 }
 
@@ -278,7 +278,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
   if(suffix_unicode_normalize && strcmp(suffix_unicode_normalize, "OFF")!=0){
     if(strcmp(cs->csname, "utf8")!=0){
       // convert into UTF-8
-      CHARSET_INFO *uc = get_charset(33,MYF(0)); // my_charset_utf8_general_ci for utf8 conversion
+      CHARSET_INFO *uc = get_charset(33); // my_charset_utf8_general_ci for utf8 conversion
       // calculate mblen and malloc.
 //      size_t cv_length = uc->mbmaxlen * cs->cset->numchars(cs, feed, feed+feed_length);
       size_t cv_length = str_convert(cs, feed, feed_length, uc, NULL, 0, NULL);
@@ -309,7 +309,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
         fputs("unicode normalization failed.\n",stderr);
         fflush(stderr);
         
-        if(feed_req_free){ my_free(feed,MYF(0)); }
+        if(feed_req_free){ my_free(feed); }
         DBUG_RETURN(FTPPC_NORMALIZATION_ERROR);
       }else if(nm_used > nm_length){
         nm_length = nm_used + 8;
@@ -317,8 +317,8 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
         if(tmp){
           nm = tmp;
         }else{
-          if(feed_req_free){ my_free(feed,MYF(0)); }
-          my_free(nm, MYF(0));
+          if(feed_req_free){ my_free(feed); }
+          my_free(nm);
           DBUG_RETURN(FTPPC_MEMORY_ERROR);
         }
         nm_used = uni_normalize(feed, feed_length, nm, nm_length, mode, options);
@@ -326,12 +326,12 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
           fputs("unicode normalization failed.\n",stderr);
           fflush(stderr);
           
-          if(feed_req_free){ my_free(feed,MYF(0)); }
-          my_free(nm, MYF(0));
+          if(feed_req_free){ my_free(feed); }
+          my_free(nm);
           DBUG_RETURN(FTPPC_NORMALIZATION_ERROR);
         }
       }
-      if(feed_req_free){ my_free(feed, MYF(0)); }
+      if(feed_req_free){ my_free(feed); }
       feed = nm;
       feed_length = nm_used;
       feed_req_free = 1;
@@ -400,7 +400,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
         param->mysql_add_word(param, pos, 0, &instinfo); // push RIGHT_PAREN token
         
         MYSQL_FTPARSER_BOOLEAN_INFO *tmp = (MYSQL_FTPARSER_BOOLEAN_INFO*)infos->data;
-        if(tmp){ my_free(tmp, MYF(0)); }
+        if(tmp){ my_free(tmp); }
         list_pop(infos);
         if(!infos){
           DBUG_RETURN(FTPPC_SYNTAX_ERROR);
@@ -446,7 +446,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
     suffix_add_word(param, pbuffer, cs, NULL, 0); // emit
   }
   ftstring_destroy(pbuffer);
-  if(feed_req_free){ my_free(feed, MYF(0)); }
+  if(feed_req_free){ my_free(feed); }
   DBUG_RETURN(0);
 }
 
@@ -475,7 +475,7 @@ int suffix_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, 
     str = value->val_str(value,buf,&len);
     if(!str) return -1;
     *(const char**)save=str;
-    if(!get_charset(33,MYF(0))) return -1; // If you don't have utf8 codec in mysql, it fails
+    if(!get_charset(33)) return -1; // If you don't have utf8 codec in mysql, it fails
     if(len==1){
         if(str[0]=='C'){ return 0;}
         if(str[0]=='D'){ return 0;}
