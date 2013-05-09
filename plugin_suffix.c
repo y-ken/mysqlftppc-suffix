@@ -274,7 +274,7 @@ static int suffix_parser_parse(MYSQL_FTPARSER_PARAM *param)
   if(suffix_unicode_normalize && strcmp(suffix_unicode_normalize, "OFF")!=0){
     if(strcmp(cs->csname, "utf8")!=0){
       // convert into UTF-8
-      CHARSET_INFO *uc = get_charset(33); // my_charset_utf8_general_ci for utf8 conversion
+      CHARSET_INFO *uc = get_charset(33, MYF(0)); // my_charset_utf8_general_ci for utf8 conversion
       // calculate mblen and malloc.
 //      size_t cv_length = uc->mbmaxlen * cs->cset->numchars(cs, feed, feed+feed_length);
       size_t cv_length = str_convert(cs, feed, feed_length, uc, NULL, 0, NULL);
@@ -471,7 +471,7 @@ int suffix_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, 
     str = value->val_str(value,buf,&len);
     if(!str) return -1;
     *(const char**)save=str;
-    if(!get_charset(33)) return -1; // If you don't have utf8 codec in mysql, it fails
+    if(!get_charset(33, MYF(0))) return -1; // If you don't have utf8 codec in mysql, it fails
     if(len==1){
         if(str[0]=='C'){ return 0;}
         if(str[0]=='D'){ return 0;}
